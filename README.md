@@ -71,7 +71,7 @@ Caddy只负责HTTP反向代理，SSL证书由宝塔统一管理。
 | 域名 | 代理名称 | 对应容器 |
 |------|---------|---------|
 | 管理后台域名（如 `admin.example.com`） | `admin` | admin容器 |
-| H5会员端域名（如 `h5.example.com`） | `h5` | h5容器 |
+| H5会员端域名（如 `h5.example.com`） | `h5web` | h5容器 |
 | API接口域名（如 `api.example.com`） | `api` | nginx-api容器 |
 
 **4.1 添加站点**
@@ -85,14 +85,16 @@ Caddy只负责HTTP反向代理，SSL证书由宝塔统一管理。
 **4.3 添加反向代理**
 
 点击站点名称右侧的 **设置** → 反向代理 → 添加反向代理：
-- 代理名称：填写上表对应的名称（管理后台填 `admin`，H5填 `h5`，API填 `api`）
+- 代理名称：填写上表对应的名称（管理后台填 `admin`，H5填 `h5web`，API填 `api`）
+
+> **注意**：宝塔反向代理名称最少3个字符，所以H5填 `h5web` 而非 `h5`。
 - 目标URL：`http://127.0.0.1:8880`
 - 发送域名：`$host`
 - 点击保存
 
-**4.4 修改配置文件（关键！）**
+**4.4 修改配置文件（关键！每个站点都要单独设置）**
 
-点击站点名称右侧的 **设置** → 反向代理 → 点击刚创建的代理名称右侧的**配置文件**，找到 `proxy_set_header REMOTE-HOST $remote_addr;` 这一行，在它**下面**添加：
+对**每个站点**分别执行：点击站点名称右侧的 **设置** → 反向代理 → 点击刚创建的代理名称右侧的**配置文件**，找到 `proxy_set_header REMOTE-HOST $remote_addr;` 这一行，在它**下面**添加：
 
 ```nginx
     proxy_set_header X-Forwarded-Proto $scheme;
