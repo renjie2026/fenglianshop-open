@@ -1,0 +1,19 @@
+[Unit]
+Description=Fenglian Shop Public Update Daemon
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=__TOOLKIT_DIR__
+Environment=AGENT_TOOLKIT_DIR=__TOOLKIT_DIR__
+Environment=PROJECT_DIR=__PROJECT_DIR__
+ExecStart=/bin/bash __TOOLKIT_DIR__/public-update-daemon.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
