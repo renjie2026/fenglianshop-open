@@ -18,29 +18,50 @@
 
 ## 快速安装
 
-### 1. 克隆仓库
+### 1. 进入部署目录
+
+推荐将系统部署到 `/opt` 目录下：
+
+```bash
+cd /opt
+```
+
+### 2. 克隆仓库
 
 ```bash
 git clone https://github.com/renjie2026/fenglianshop-open.git
 cd fenglianshop-open
 ```
 
-### 2. 配置环境变量
+> 如果克隆时遇到 `HTTP2 framing layer` 错误，请使用 HTTP/1.1 协议重试：
+> ```bash
+> git -c http.version=HTTP/1.1 clone https://github.com/renjie2026/fenglianshop-open.git
+> cd fenglianshop-open
+> ```
+
+### 3. 配置环境变量
 
 ```bash
 cp .env.example .env
-vim .env
 ```
 
-**必须修改的配置项：**
+**必须修改的三项域名配置**（把 `yourdomain.com` 换成你的真实域名）：
 
-| 配置项 | 说明 | 示例 |
-|--------|------|------|
-| `ADMIN_URL` | 管理后台域名 | `https://admin.example.com` |
-| `H5_URL` | H5会员端域名 | `https://h5.example.com` |
-| `API_URL` | API接口域名 | `https://api.example.com` |
+```bash
+sed -i 's|https://admin.yourdomain.com|https://admin.你的域名.com|g' .env
+sed -i 's|https://h5.yourdomain.com|https://h5.你的域名.com|g' .env
+sed -i 's|https://api.yourdomain.com|https://api.你的域名.com|g' .env
+```
 
-### 3. 一键启动
+**验证修改结果：**
+
+```bash
+head -5 .env
+```
+
+输出应显示三个域名已替换为你的真实域名。
+
+### 4. 一键启动
 
 ```bash
 bash start.sh
@@ -48,7 +69,19 @@ bash start.sh
 
 脚本会自动完成：环境检查、密码生成、镜像拉取、容器启动、健康检查、备份任务配置。
 
-首次部署完成后，如需让后台“系统升级”按钮真正执行宿主机拉镜像更新，请继续安装公开版更新守护进程：
+### 5. 配置宝塔反向代理（SSL）
+
+本系统使用**宝塔+Caddy共存架构**：宝塔负责SSL证书和反向代理，Caddy负责内部域名路由。
+
+1. 在宝塔面板添加3个站点（admin/h5/api 域名），PHP版本选”纯静态”
+2. 每个站点申请Let's Encrypt免费SSL证书，开启强制HTTPS
+3. 每个站点添加反向代理：目标URL `http://127.0.0.1:8880`，发送域名保持 `$host`
+
+详细配置步骤请参考 [部署使用教程](部署使用教程.md)。
+
+### 6. 安装更新守护进程
+
+首次部署完成后，如需让后台”系统升级”按钮真正执行宿主机拉镜像更新，请继续安装公开版更新守护进程：
 
 ```bash
 sudo bash ./update-toolkit/install-public-update-daemon.sh
@@ -89,15 +122,14 @@ sudo bash ./update-toolkit/install-public-update-daemon.sh
 | `ADMIN_URL` | 是 | - | 管理后台完整URL (含https://) |
 | `H5_URL` | 是 | - | H5会员端完整URL |
 | `API_URL` | 是 | - | API接口完整URL |
-| `HTTP_PORT` | 否 | `8880` | HTTP端口映射 |
-| `HTTPS_PORT` | 否 | `8443` | HTTPS端口映射 |
+| `HTTP_PORT` | 否 | `8880` | Caddy内部HTTP端口（宝塔反代目标） |
 | `DB_DATABASE` | 否 | `xinshangcheng003` | 数据库名称 |
 | `DB_USERNAME` | 否 | `xinshangcheng` | 数据库用户名 |
 | `DB_PASSWORD` | 否 | 自动生成 | 数据库密码（首次运行自动生成） |
 | `MYSQL_ROOT_PASSWORD` | 否 | 自动生成 | MySQL root密码 |
 | `REDIS_PASSWORD` | 否 | 空 | Redis密码（留空表示无密码） |
 | `VERSION` | 否 | 见.env.example | Docker镜像版本tag |
-| `CADDY_IMAGE` | 否 | `caddy:2-alpine` | Caddy镜像（国内可切换阿里云） |
+| `CADDY_IMAGE` | 否 | `fenglianshop/caddy` | Caddy镜像（一般无需修改） |
 | `BACKUP_RETENTION_DAYS` | 否 | `7` | 备份保留天数 |
 | `APP_EDITION` | 否 | `single` | 应用版本（单开版=single） |
 | `DEPLOYMENT_MODE` | 否 | `public_dockerhub` | 公开版升级模式 |
@@ -109,13 +141,27 @@ sudo bash ./update-toolkit/install-public-update-daemon.sh
 
 ### Q1: 域名还没有备案，能用IP直接访问吗？
 
-可以。将 `.env` 中的域名改为 `http://你的IP:端口` 格式，同时需要修改 `HTTP_PORT` 和 `HTTPS_PORT` 避免端口冲突。注意：使用IP访问时Caddy无法自动申请SSL证书。
+可以临时使用IP访问。将 `.env` 中的域名改为 `http://你的IP` 格式，修改 `HTTP_PORT` 为可用端口。通过 `http://IP:端口` 直接访问管理后台。注意：建议尽快配置域名和SSL以获得完整功能。
 
-### Q2: 国内服务器拉取镜像很慢怎么办？
+### Q2: 国内服务器拉取镜像很慢或超时怎么办？
 
-脚本会自动检测国内网络环境并切换阿里云镜像源。如果自动检测失败，可手动在 `.env` 中取消注释：
+`start.sh` 会自动检测国内网络并配置 `docker.1panel.live` 镜像加速器，一般情况下无需手动操作。
+
+如果遇到加速器不可用的情况，可手动切换其他镜像源：
+
+**备用镜像源：**
+```bash
+# 切换为 mirror.baijiayun.com
+echo '{"registry-mirrors":["https://mirror.baijiayun.com"]}' > /etc/docker/daemon.json
+systemctl daemon-reload && systemctl restart docker
+bash start.sh
 ```
-CADDY_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/caddy:2-alpine
+
+**恢复直连 Docker Hub：**
+```bash
+echo '{}' > /etc/docker/daemon.json
+systemctl daemon-reload && systemctl restart docker
+bash start.sh
 ```
 
 ### Q3: 如何更新到新版本？
