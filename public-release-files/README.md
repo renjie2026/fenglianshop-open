@@ -18,50 +18,29 @@
 
 ## 快速安装
 
-### 1. 进入部署目录
-
-推荐将系统部署到 `/opt` 目录下：
-
-```bash
-cd /opt
-```
-
-### 2. 克隆仓库
+### 1. 克隆仓库
 
 ```bash
 git clone https://github.com/renjie2026/fenglianshop-open.git
 cd fenglianshop-open
 ```
 
-> 如果克隆时遇到 `HTTP2 framing layer` 错误，请使用 HTTP/1.1 协议重试：
-> ```bash
-> git -c http.version=HTTP/1.1 clone https://github.com/renjie2026/fenglianshop-open.git
-> cd fenglianshop-open
-> ```
-
-### 3. 配置环境变量
+### 2. 配置环境变量
 
 ```bash
 cp .env.example .env
+vim .env
 ```
 
-**必须修改的三项域名配置**（把 `yourdomain.com` 换成你的真实域名）：
+**必须修改的配置项：**
 
-```bash
-sed -i 's|https://admin.yourdomain.com|https://admin.你的域名.com|g' .env
-sed -i 's|https://h5.yourdomain.com|https://h5.你的域名.com|g' .env
-sed -i 's|https://api.yourdomain.com|https://api.你的域名.com|g' .env
-```
+| 配置项 | 说明 | 示例 |
+|--------|------|------|
+| `ADMIN_URL` | 管理后台域名 | `https://admin.example.com` |
+| `H5_URL` | H5会员端域名 | `https://h5.example.com` |
+| `API_URL` | API接口域名 | `https://api.example.com` |
 
-**验证修改结果：**
-
-```bash
-head -5 .env
-```
-
-输出应显示三个域名已替换为你的真实域名。
-
-### 4. 一键启动
+### 3. 一键启动
 
 ```bash
 bash start.sh
@@ -69,25 +48,70 @@ bash start.sh
 
 脚本会自动完成：环境检查、密码生成、镜像拉取、容器启动、健康检查、备份任务配置。
 
-### 5. 配置宝塔反向代理（SSL）
-
-本系统使用**宝塔+Caddy共存架构**：宝塔负责SSL证书和反向代理，Caddy负责内部域名路由。
-
-1. 在宝塔面板添加3个站点（admin/h5/api 域名），PHP版本选”纯静态”
-2. 每个站点申请Let's Encrypt免费SSL证书，开启强制HTTPS
-3. 每个站点添加反向代理：目标URL `http://127.0.0.1:8880`，发送域名保持 `$host`
-
-详细配置步骤请参考 [部署使用教程](部署使用教程.md)。
-
-### 6. 安装更新守护进程
-
-首次部署完成后，如需让后台”系统升级”按钮真正执行宿主机拉镜像更新，请继续安装公开版更新守护进程：
+首次部署完成后，如需让后台“系统升级”按钮真正执行宿主机拉镜像更新，请继续安装公开版更新守护进程：
 
 ```bash
 sudo bash ./update-toolkit/install-public-update-daemon.sh
 ```
 
 安装完成后，在管理后台进入`升级与授权 -> 系统升级`，填写授权域名和授权码完成激活。
+
+### 4. 配置宝塔反向代理（SSL）
+
+本系统采用**宝塔Nginx（SSL终止）+ Caddy（HTTP反代）**架构：
+
+```
+用户浏览器 → 宝塔Nginx(80/443, SSL终止) → Caddy(127.0.0.1:8880, HTTP) → Docker容器
+```
+
+Caddy只负责HTTP反向代理，SSL证书由宝塔统一管理。
+
+**以下操作对3个域名各执行一次：**
+
+| 域名 | 代理名称 | 对应容器 |
+|------|---------|---------|
+| 管理后台域名（如 `admin.example.com`） | `admin` | admin容器 |
+| H5会员端域名（如 `h5.example.com`） | `h5` | h5容器 |
+| API接口域名（如 `api.example.com`） | `api` | nginx-api容器 |
+
+**4.1 添加站点**
+
+宝塔面板 → 网站 → 添加站点 → 填写域名 → PHP版本选"纯静态" → 提交
+
+**4.2 申请SSL证书**
+
+点击站点名称 → SSL → 申请/部署证书（Let's Encrypt 或其他证书）
+
+**4.3 添加反向代理**
+
+点击站点名称右侧的 **设置** → 反向代理 → 添加反向代理：
+- 代理名称：填写上表对应的名称（管理后台填 `admin`，H5填 `h5`，API填 `api`）
+- 目标URL：`http://127.0.0.1:8880`
+- 发送域名：`$host`
+- 点击保存
+
+**4.4 修改配置文件（关键！）**
+
+点击站点名称右侧的 **设置** → 反向代理 → 点击刚创建的代理名称右侧的**配置文件**，找到 `proxy_set_header REMOTE-HOST $remote_addr;` 这一行，在它**下面**添加：
+
+```nginx
+    proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+保存。最终配置文件中的关键部分应如下：
+
+```nginx
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header REMOTE-HOST $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+**注意事项：**
+- `Host` 必须是 `$host`（不能是 `127.0.0.1`），否则 Caddy 无法按域名路由到正确的容器
+- `X-Forwarded-Proto $scheme` 必须添加，否则后端不知道是HTTPS，会生成错误的HTTP链接
+- 3个站点的反向代理配置完全相同，只有域名不同
 
 ---
 
@@ -122,14 +146,14 @@ sudo bash ./update-toolkit/install-public-update-daemon.sh
 | `ADMIN_URL` | 是 | - | 管理后台完整URL (含https://) |
 | `H5_URL` | 是 | - | H5会员端完整URL |
 | `API_URL` | 是 | - | API接口完整URL |
-| `HTTP_PORT` | 否 | `8880` | Caddy内部HTTP端口（宝塔反代目标） |
+| `HTTP_PORT` | 否 | `8880` | HTTP端口映射（SSL由宝塔处理） |
 | `DB_DATABASE` | 否 | `xinshangcheng003` | 数据库名称 |
 | `DB_USERNAME` | 否 | `xinshangcheng` | 数据库用户名 |
 | `DB_PASSWORD` | 否 | 自动生成 | 数据库密码（首次运行自动生成） |
 | `MYSQL_ROOT_PASSWORD` | 否 | 自动生成 | MySQL root密码 |
 | `REDIS_PASSWORD` | 否 | 空 | Redis密码（留空表示无密码） |
 | `VERSION` | 否 | 见.env.example | Docker镜像版本tag |
-| `CADDY_IMAGE` | 否 | `fenglianshop/caddy` | Caddy镜像（一般无需修改） |
+| `CADDY_IMAGE` | 否 | `caddy:2-alpine` | Caddy镜像（国内可切换阿里云） |
 | `BACKUP_RETENTION_DAYS` | 否 | `7` | 备份保留天数 |
 | `APP_EDITION` | 否 | `single` | 应用版本（单开版=single） |
 | `DEPLOYMENT_MODE` | 否 | `public_dockerhub` | 公开版升级模式 |
@@ -141,27 +165,13 @@ sudo bash ./update-toolkit/install-public-update-daemon.sh
 
 ### Q1: 域名还没有备案，能用IP直接访问吗？
 
-可以临时使用IP访问。将 `.env` 中的域名改为 `http://你的IP` 格式，修改 `HTTP_PORT` 为可用端口。通过 `http://IP:端口` 直接访问管理后台。注意：建议尽快配置域名和SSL以获得完整功能。
+可以。将 `.env` 中的域名改为 `http://你的IP:端口` 格式，同时需要修改 `HTTP_PORT` 避免端口冲突。注意：使用IP访问时不经过宝塔，无法使用SSL。
 
-### Q2: 国内服务器拉取镜像很慢或超时怎么办？
+### Q2: 国内服务器拉取镜像很慢怎么办？
 
-`start.sh` 会自动检测国内网络并配置 `docker.1panel.live` 镜像加速器，一般情况下无需手动操作。
-
-如果遇到加速器不可用的情况，可手动切换其他镜像源：
-
-**备用镜像源：**
-```bash
-# 切换为 mirror.baijiayun.com
-echo '{"registry-mirrors":["https://mirror.baijiayun.com"]}' > /etc/docker/daemon.json
-systemctl daemon-reload && systemctl restart docker
-bash start.sh
+脚本会自动检测国内网络环境并切换阿里云镜像源。如果自动检测失败，可手动在 `.env` 中取消注释：
 ```
-
-**恢复直连 Docker Hub：**
-```bash
-echo '{}' > /etc/docker/daemon.json
-systemctl daemon-reload && systemctl restart docker
-bash start.sh
+CADDY_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/caddy:2-alpine
 ```
 
 ### Q3: 如何更新到新版本？
