@@ -18,14 +18,50 @@
 
 ## 快速安装
 
-### 1. 克隆仓库
+### 1. 配置宝塔站点和反向代理
+
+本系统采用**宝塔Nginx（SSL终止）+ Caddy（HTTP反代）**架构：
+
+```
+用户浏览器 → 宝塔Nginx(80/443, SSL终止) → Caddy(127.0.0.1:8880, HTTP) → Docker容器
+```
+
+**以下操作对3个域名各执行一次：**
+
+| 域名 | 代理名称 | 对应容器 |
+|------|---------|---------|
+| 管理后台域名（如 `admin.example.com`） | `admin` | admin容器 |
+| H5会员端域名（如 `h5.example.com`） | `h5web` | h5容器 |
+| API接口域名（如 `api.example.com`） | `api` | nginx-api容器 |
+
+**1.1 添加站点**
+
+宝塔面板 → 网站 → 添加站点 → 填写域名 → PHP版本选"纯静态" → 提交
+
+**1.2 申请SSL证书**
+
+点击站点名称 → SSL → 申请/部署证书（Let's Encrypt 或其他证书）
+
+**1.3 添加反向代理**
+
+点击站点名称右侧的 **设置** → 反向代理 → 添加反向代理：
+- 代理名称：填写上表对应的名称（管理后台填 `admin`，H5填 `h5web`，API填 `api`）
+
+> **注意**：宝塔反向代理名称最少3个字符，所以H5填 `h5web` 而非 `h5`。
+- 目标URL：`http://127.0.0.1:8880`
+- 发送域名：`$host`
+- 点击保存
+
+每个域名的站点各添加一次。3个站点全部添加完成后，进入下一步。
+
+### 2. 克隆仓库
 
 ```bash
 git clone https://github.com/renjie2026/fenglianshop-open.git
 cd fenglianshop-open
 ```
 
-### 2. 配置环境变量
+### 3. 配置环境变量
 
 ```bash
 cp .env.example .env
@@ -40,7 +76,7 @@ vim .env
 | `H5_URL` | H5会员端域名 | `https://h5.example.com` |
 | `API_URL` | API接口域名 | `https://api.example.com` |
 
-### 3. 一键启动
+### 4. 一键启动
 
 ```bash
 bash start.sh
@@ -48,61 +84,11 @@ bash start.sh
 
 脚本会自动完成：环境检查、密码生成、镜像拉取、容器启动、健康检查、备份任务配置。
 
-首次部署完成后，如需让后台“系统升级”按钮真正执行宿主机拉镜像更新，请继续安装公开版更新守护进程：
-
-```bash
-sudo bash ./update-toolkit/install-public-update-daemon.sh
-```
+部署完成后会依次提示：
+1. **是否安装自动更新守护进程？**（建议选 Y）
+2. **是否执行宝塔反代优化修复脚本？**（建议选 Y，自动修复宝塔反代配置问题）
 
 安装完成后，在管理后台进入`升级与授权 -> 系统升级`，填写授权域名和授权码完成激活。
-
-### 4. 配置宝塔反向代理（SSL）
-
-本系统采用**宝塔Nginx（SSL终止）+ Caddy（HTTP反代）**架构：
-
-```
-用户浏览器 → 宝塔Nginx(80/443, SSL终止) → Caddy(127.0.0.1:8880, HTTP) → Docker容器
-```
-
-Caddy只负责HTTP反向代理，SSL证书由宝塔统一管理。
-
-**以下操作对3个域名各执行一次：**
-
-| 域名 | 代理名称 | 对应容器 |
-|------|---------|---------|
-| 管理后台域名（如 `admin.example.com`） | `admin` | admin容器 |
-| H5会员端域名（如 `h5.example.com`） | `h5web` | h5容器 |
-| API接口域名（如 `api.example.com`） | `api` | nginx-api容器 |
-
-**4.1 添加站点**
-
-宝塔面板 → 网站 → 添加站点 → 填写域名 → PHP版本选"纯静态" → 提交
-
-**4.2 申请SSL证书**
-
-点击站点名称 → SSL → 申请/部署证书（Let's Encrypt 或其他证书）
-
-**4.3 添加反向代理**
-
-点击站点名称右侧的 **设置** → 反向代理 → 添加反向代理：
-- 代理名称：填写上表对应的名称（管理后台填 `admin`，H5填 `h5web`，API填 `api`）
-
-> **注意**：宝塔反向代理名称最少3个字符，所以H5填 `h5web` 而非 `h5`。
-- 目标URL：`http://127.0.0.1:8880`
-- 发送域名：`$host`
-- 点击保存
-
-每个域名的站点各添加一次。3个站点全部添加完成后，进入下一步。
-
-**4.4 一键修复反代配置**
-
-宝塔自动生成的反向代理配置存在若干问题（proxy_pass 末尾多了 `/`、缺少必要的请求头等），本项目提供了修复脚本一键解决：
-
-```bash
-bash fix-bt-proxy-pass.sh
-```
-
-脚本会自动检测并修复所有站点的配置问题，备份原文件并重载 Nginx。预览模式：`bash fix-bt-proxy-pass.sh --dry-run`
 
 ---
 
@@ -171,8 +157,8 @@ CADDY_IMAGE=registry.cn-hangzhou.aliyuncs.com/library/caddy:2-alpine
 # 1. 确认 update-toolkit 守护进程已安装
 systemctl status fenglianshop-public-update-daemon --no-pager
 
-# 2. 在管理后台进入“升级与授权 -> 系统升级”
-# 3. 先完成授权激活，再点击“检查更新 / 立即更新”
+# 2. 在管理后台进入"升级与授权 → 系统升级"
+# 3. 先完成授权激活，再点击"检查更新 / 立即更新"
 ```
 
 ### Q4: 数据库密码忘记了怎么办？
@@ -205,7 +191,7 @@ bash restore.sh backups/backup_20260531_030000.sql
 ├── .env.example          # 环境变量模板
 ├── Caddyfile             # Caddy 反向代理配置（自动生成）
 ├── start.sh              # 一键部署脚本
-├── fix-bt-proxy-pass.sh  # 宝塔反代配置一键修复脚本
+├── fix-bt-proxy-pass.sh  # 宝塔反代优化修复脚本
 ├── update-toolkit/       # 公开版宿主机更新守护进程
 ├── backup.sh             # 数据库备份脚本
 ├── restore.sh            # 数据库恢复脚本
