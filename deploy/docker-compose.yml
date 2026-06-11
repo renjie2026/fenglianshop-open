@@ -50,15 +50,15 @@ services:
       - app-network
 
   api:
-    image: fenglianshop/api:${VERSION:-v6.20260611.002}
+    image: fenglianshop/api:${VERSION:-v6.20260611.003}
     restart: unless-stopped
     environment:
-      APP_URL: ${API_URL:-http://localhost}
       APP_EDITION: ${APP_EDITION:-single}
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-public_dockerhub}
-      APP_VERSION: ${VERSION:-v6.20260611.002}
+      APP_VERSION: ${VERSION:-v6.20260611.003}
       AGENT_TOOLKIT_DIR: ${AGENT_TOOLKIT_DIR:-/host/public-update-toolkit}
       SAFE_DB_INIT: "true"
+      APP_URL: ${API_URL:-http://localhost}
       DB_CONNECTION: mysql
       DB_HOST: mysql
       DB_PORT: "3306"
@@ -68,6 +68,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
       UPDATE_MGMT_BASE_URLS: ${UPDATE_MGMT_BASE_URLS:-}
     volumes:
       - api_storage:/var/www/html/storage
@@ -83,7 +85,7 @@ services:
       - app-network
 
   nginx-api:
-    image: fenglianshop/nginx-api:${VERSION:-v6.20260611.002}
+    image: fenglianshop/nginx-api:${VERSION:-v6.20260611.003}
     restart: unless-stopped
     depends_on:
       - api
@@ -92,19 +94,18 @@ services:
       - app-network
 
   admin:
-    image: fenglianshop/admin:${VERSION:-v6.20260611.002}
+    image: fenglianshop/admin:${VERSION:-v6.20260611.003}
     restart: unless-stopped
-    environment:
-      APP_URL: ${ADMIN_URL:-}
     mem_limit: 256M
     networks:
       - app-network
 
   h5:
-    image: fenglianshop/h5:${VERSION:-v6.20260611.002}
+    image: fenglianshop/h5:${VERSION:-v6.20260611.003}
     restart: unless-stopped
     environment:
-      APP_URL: ${H5_URL:-}
+      APP_URL: ${API_URL:-}
+      APP_ENV: ${APP_ENV:-production}
     mem_limit: 256M
     networks:
       - app-network
@@ -114,6 +115,10 @@ services:
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8880}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    environment:
+      - ALIYUN_ACCESS_KEY_ID=${ALIYUN_ACCESS_KEY_ID:-}
+      - ALIYUN_SECRET_KEY=${ALIYUN_SECRET_KEY:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
