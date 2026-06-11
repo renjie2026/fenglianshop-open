@@ -59,6 +59,7 @@
 在服务器上执行以下命令，自动下载部署工具包到 `/opt/fenglianshop` 目录：
 
 ```bash
+cd /opt
 curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/deploy/install.sh | bash
 ```
 
