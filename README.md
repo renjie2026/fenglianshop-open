@@ -62,16 +62,17 @@
 curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/deploy/install.sh | bash
 ```
 
-> 如果下载缓慢或失败，也可以手动克隆：
+> 如果下载缓慢或失败，也可以手动克隆（只下载 deploy 目录，不含源码）：
 > ```bash
 > cd /opt
-> git clone https://github.com/renjie2026/fenglianshop-open.git
-> cp -r fenglianshop-open/deploy fenglianshop
+> git clone --depth 1 --sparse https://github.com/renjie2026/fenglianshop-open.git fenglianshop-tmp
+> cd fenglianshop-tmp && git sparse-checkout set deploy
+> cp -r deploy ../fenglianshop && cd .. && rm -rf fenglianshop-tmp
 > ```
 >
 > 克隆时遇到 `HTTP2 framing layer` 错误，使用 HTTP/1.1 重试：
 > ```bash
-> git -c http.version=HTTP/1.1 clone https://github.com/renjie2026/fenglianshop-open.git
+> git -c http.version=HTTP/1.1 clone --depth 1 --sparse https://github.com/renjie2026/fenglianshop-open.git fenglianshop-tmp
 > ```
 
 ### 2. 配置环境变量
