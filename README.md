@@ -92,28 +92,17 @@ Caddy只负责HTTP反向代理，SSL证书由宝塔统一管理。
 - 发送域名：`$host`
 - 点击保存
 
-**4.4 修改配置文件（关键！每个站点都要单独设置）**
+每个域名的站点各添加一次。3个站点全部添加完成后，进入下一步。
 
-对**每个站点**分别执行：点击站点名称右侧的 **设置** → 反向代理 → 点击刚创建的代理名称右侧的**配置文件**，找到 `proxy_set_header REMOTE-HOST $remote_addr;` 这一行，在它**下面**添加：
+**4.4 一键修复反代配置**
 
-```nginx
-    proxy_set_header X-Forwarded-Proto $scheme;
+宝塔自动生成的反向代理配置存在若干问题（proxy_pass 末尾多了 `/`、缺少必要的请求头等），本项目提供了修复脚本一键解决：
+
+```bash
+bash fix-bt-proxy-pass.sh
 ```
 
-保存。最终配置文件中的关键部分应如下：
-
-```nginx
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header REMOTE-HOST $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
-```
-
-**注意事项：**
-- `Host` 必须是 `$host`（不能是 `127.0.0.1`），否则 Caddy 无法按域名路由到正确的容器
-- `X-Forwarded-Proto $scheme` 必须添加，否则后端不知道是HTTPS，会生成错误的HTTP链接
-- 3个站点的反向代理配置完全相同，只有域名不同
+脚本会自动检测并修复所有站点的配置问题，备份原文件并重载 Nginx。预览模式：`bash fix-bt-proxy-pass.sh --dry-run`
 
 ---
 
@@ -216,6 +205,7 @@ bash restore.sh backups/backup_20260531_030000.sql
 ├── .env.example          # 环境变量模板
 ├── Caddyfile             # Caddy 反向代理配置（自动生成）
 ├── start.sh              # 一键部署脚本
+├── fix-bt-proxy-pass.sh  # 宝塔反代配置一键修复脚本
 ├── update-toolkit/       # 公开版宿主机更新守护进程
 ├── backup.sh             # 数据库备份脚本
 ├── restore.sh            # 数据库恢复脚本
