@@ -68,6 +68,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
       UPDATE_MGMT_BASE_URLS: ${UPDATE_MGMT_BASE_URLS:-}
     volumes:
       - api_storage:/var/www/html/storage
