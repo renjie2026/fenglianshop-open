@@ -1,0 +1,36 @@
+.git
+.gitignore
+node_modules
+vendor
+storage/logs
+storage/framework
+public/uploads
+*.sql
+*.bak
+.env*
+!.env.example
+
+# 排除SaaS和更新管理平台
+saas-overlay/
+saas-overlay-admin/
+update-management-platform/
+
+# 排除应用中心插件源码/构建产物/插件包
+admin-modular/apps/
+public/apps/
+plugins/
+docker/temp_distribution/
+operation-app/
+temp/
+
+# 排除开发和测试文件
+test/
+tests/
+tools/
+versioned-environments/
+scripts/
+software-copyright/
+docs/
+.claude/
+.github/
+public-release-files/

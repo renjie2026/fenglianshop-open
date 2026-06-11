@@ -388,6 +388,10 @@ if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
     warn "查看日志: $COMPOSE_CMD logs mysql redis"
 fi
 
+# ----- 12.5 确保 storage 目录结构 -----
+info "确保 API storage 目录结构..."
+$COMPOSE_CMD exec -T api sh -c "mkdir -p /var/www/html/storage/framework/sessions /var/www/html/storage/framework/cache /var/www/html/storage/framework/views /var/www/html/storage/logs /var/www/html/bootstrap/cache && chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache" 2>/dev/null || warn "storage 目录初始化跳过（API容器可能未就绪）"
+
 # ----- 13. 安装备份 cron -----
 BACKUP_DAYS=$(get_env BACKUP_RETENTION_DAYS)
 BACKUP_DAYS=${BACKUP_DAYS:-7}
