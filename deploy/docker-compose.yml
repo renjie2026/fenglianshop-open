@@ -71,6 +71,7 @@ services:
       CACHE_DRIVER: redis
       SESSION_DRIVER: redis
       UPDATE_MGMT_BASE_URLS: ${UPDATE_MGMT_BASE_URLS:-}
+      AGENT_BOOTSTRAP_SECRET: ${AGENT_BOOTSTRAP_SECRET:-update_mgmt_secret_2026}
     volumes:
       - api_storage:/var/www/html/storage
       - api_uploads:/var/www/html/public/uploads
