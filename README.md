@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/d
 > cd /opt
 > git clone --depth 1 --sparse https://github.com/renjie2026/fenglianshop-open.git fenglianshop-tmp
 > cd fenglianshop-tmp && git sparse-checkout set deploy
-> cp -r deploy ../fenglianshop && cd .. && rm -rf fenglianshop-tmp
+> cp -r deploy/* ../fenglianshop/ && cd .. && rm -rf fenglianshop-tmp
 > ```
 >
 > 克隆时遇到 `HTTP2 framing layer` 错误，使用 HTTP/1.1 重试：
@@ -203,24 +203,9 @@ bash start.sh
 
 ### Q2: 国内服务器拉取镜像很慢或超时怎么办？
 
-`start.sh` 会自动检测国内网络并配置 `docker.1panel.live` 镜像加速器，一般情况下无需手动操作。
+`start.sh` 会自动检测国内网络并配置 `docker.1ms.run` 镜像加速器，一般情况下无需手动操作。
 
-如果遇到加速器不可用的情况，可手动切换其他镜像源：
-
-**备用镜像源：**
-```bash
-# 切换为 mirror.baijiayun.com
-echo '{"registry-mirrors":["https://mirror.baijiayun.com"]}' > /etc/docker/daemon.json
-systemctl daemon-reload && systemctl restart docker
-bash start.sh
-```
-
-**恢复直连 Docker Hub：**
-```bash
-echo '{}' > /etc/docker/daemon.json
-systemctl daemon-reload && systemctl restart docker
-bash start.sh
-```
+如果加速器不可用，可手动修改 `/etc/docker/daemon.json` 中的镜像源地址，然后重启 Docker 重新部署。
 
 ### Q3: 如何更新到新版本？
 
