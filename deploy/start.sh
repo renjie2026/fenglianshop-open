@@ -314,7 +314,7 @@ if [ -z "$CADDY_IMAGE_VAL" ] || [ "$CADDY_IMAGE_VAL" = "" ]; then
     info "检测网络环境..."
     if curl -s --connect-timeout 3 http://ipinfo.io/country 2>/dev/null | grep -q "CN"; then
         info "检测到国内网络，配置 Docker 镜像加速器..."
-        DOCKER_MIRROR="https://docker.1panel.live"
+        DOCKER_MIRROR="https://docker.1ms.run"
         if [ -f /etc/docker/daemon.json ]; then
             if ! grep -q "docker.1panel.live" /etc/docker/daemon.json; then
                 info "写入 Docker 镜像加速器到 /etc/docker/daemon.json..."
