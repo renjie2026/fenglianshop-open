@@ -60,15 +60,15 @@
 
 ```bash
 cd /opt
-curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/deploy/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/public-release-files/install.sh | bash
 ```
 
-> 如果下载缓慢或失败，也可以手动克隆（只下载 deploy 目录，不含源码）：
+> 如果下载缓慢或失败，也可以手动克隆（只下载 public-release-files 目录，不含源码）：
 > ```bash
 > cd /opt
 > git clone --depth 1 --sparse https://github.com/renjie2026/fenglianshop-open.git fenglianshop-tmp
-> cd fenglianshop-tmp && git sparse-checkout set deploy
-> cp -r deploy/* ../fenglianshop/ && cd .. && rm -rf fenglianshop-tmp
+> cd fenglianshop-tmp && git sparse-checkout set public-release-files
+> cp -r public-release-files/* ../fenglianshop/ && cd .. && rm -rf fenglianshop-tmp
 > ```
 >
 > 克隆时遇到 `HTTP2 framing layer` 错误，使用 HTTP/1.1 重试：
@@ -251,7 +251,7 @@ bash restore.sh backups/backup_20260531_030000.sql
 fenglianshop-open/
 ├── README.md                  ← 部署安装教程（你正在看的）
 ├── LICENSE                    ← AGPLv3 许可证
-└── deploy/                    ← 部署工具包
+└── public-release-files/                    ← 部署工具包
     ├── install.sh             ← 一键下载脚本（推荐使用）
     ├── docker-compose.yml     ← Docker Compose 编排文件
     ├── .env.example           ← 环境变量模板

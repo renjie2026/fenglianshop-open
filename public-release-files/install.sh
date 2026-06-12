@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 #  蜂链商城 - 一键下载部署工具包
-#  用法: curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/deploy/install.sh | bash
+#  用法: curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/public-release-files/install.sh | bash
 #  自定义目录: curl -fsSL ... | bash -s -- /data/fenglianshop
 # ============================================================
 set -euo pipefail
@@ -56,10 +56,10 @@ if [ "$GIT_MAJOR" -gt 2 ] || { [ "$GIT_MAJOR" -eq 2 ] && [ "$GIT_MINOR" -ge 25 ]
 fi
 
 if [ "$USE_SPARSE" = true ]; then
-    # sparse checkout：只拉取 deploy/ 目录
+    # sparse checkout：只拉取 public-release-files/ 目录
     git clone --depth 1 --sparse "$REPO_URL" "$TMPDIR/repo"
     cd "$TMPDIR/repo"
-    git sparse-checkout set deploy
+    git sparse-checkout set public-release-files
 else
     # 回退：完整浅克隆
     warn "git 版本较低，使用完整克隆（推荐升级 git 到 2.25+）"
@@ -69,13 +69,13 @@ fi
 # ----- 4. 复制部署文件到目标目录 -----
 mkdir -p "$INSTALL_DIR"
 
-if [ -d "$TMPDIR/repo/deploy" ]; then
-    cp -r "$TMPDIR/repo/deploy/"* "$INSTALL_DIR/"
-    for f in "$TMPDIR/repo/deploy/".[!.]*; do
+if [ -d "$TMPDIR/repo/public-release-files" ]; then
+    cp -r "$TMPDIR/repo/public-release-files/"* "$INSTALL_DIR/"
+    for f in "$TMPDIR/repo/public-release-files/".[!.]*; do
         [ -e "$f" ] && cp -r "$f" "$INSTALL_DIR/"
     done
 else
-    error "仓库中未找到 deploy/ 目录，可能是仓库结构尚未更新。"
+    error "仓库中未找到 public-release-files/ 目录，可能是仓库结构尚未更新。"
     exit 1
 fi
 
