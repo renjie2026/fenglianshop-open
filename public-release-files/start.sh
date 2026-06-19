@@ -268,7 +268,9 @@ maybe_install_public_update_daemon() {
         return 0
     fi
 
-    read -rp "是否现在安装公开版自动更新守护进程？(y/N): " confirm_install
+    echo ""
+    echo "  ============================================================"
+    read -rp "  是否现在安装公开版自动更新守护进程？(y/N): " confirm_install
     if [ "$confirm_install" = "y" ] || [ "$confirm_install" = "Y" ]; then
         bash "$install_script"
     else
@@ -290,7 +292,8 @@ maybe_run_bt_proxy_fix() {
     info "  - 修正 Host 头为 \$host（使Caddy按域名路由）"
     info "  - 添加 X-Forwarded-Proto 请求头（使后端识别HTTPS）"
     echo ""
-    read -rp "是否执行宝塔反代优化修复脚本？(y/N): " confirm_fix
+    echo "  ============================================================"
+    read -rp "  是否执行宝塔反代优化修复脚本？(y/N): " confirm_fix
     if [ "$confirm_fix" = "y" ] || [ "$confirm_fix" = "Y" ]; then
         bash "$fix_script"
     else
@@ -500,15 +503,23 @@ pull_images_with_retry() {
     local attempt=1
     while [ $attempt -le $max_retries ]; do
         info "拉取镜像（第 ${attempt}/${max_retries} 次尝试）..."
-        # 🔴 关键：不能用 | tail 或 | grep 管道（会把进度输出全部缓冲到命令结束才显示，
-        # 表现为光标闪烁长时间无输出）。直接让 compose pull 输出到终端，实时显示进度。
-        # 退出码用 $?: set +e 保护避免失败终止脚本，失败后进入重试逻辑。
+        # compose pull 的进度条输出不会自动清理，命令结束后面遗留大片空白区域，
+        # 且状态始终保持 "Pulling"（不会更新为 Pulled），在宝塔终端等环境下极易
+        # 让用户误以为"卡死"。
+        # 修复：pull 结束后用 ANSI 转义序列清除光标下方所有残留（\033[J），随后
+        # 打印醒目的完成横幅，确保用户一眼看到结果。
         set +e
         $COMPOSE_CMD pull
         local pull_exit=$?
         set -e
         if [ $pull_exit -eq 0 ]; then
-            ok "镜像拉取完成"
+            # 清除进度条残留 + 醒目成功横幅
+            printf '\033[J'
+            echo ""
+            echo "  ============================================"
+            echo "  ✅  所有镜像拉取完成"
+            echo "  ============================================"
+            echo ""
             return 0
         fi
         if [ $attempt -lt $max_retries ]; then

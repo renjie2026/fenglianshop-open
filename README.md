@@ -60,15 +60,15 @@
 
 ```bash
 cd /opt
-curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/public-release-files/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/renjie2026/fenglianshop-open/main/deploy/install.sh | bash
 ```
 
-> 如果下载缓慢或失败，也可以手动克隆（只下载 public-release-files 目录，不含源码）：
+> 如果下载缓慢或失败，也可以手动克隆（只下载 deploy 目录，不含源码）：
 > ```bash
 > cd /opt
 > git clone --depth 1 --sparse https://github.com/renjie2026/fenglianshop-open.git fenglianshop-tmp
-> cd fenglianshop-tmp && git sparse-checkout set public-release-files
-> cp -r public-release-files/* ../fenglianshop/ && cd .. && rm -rf fenglianshop-tmp
+> cd fenglianshop-tmp && git sparse-checkout set deploy
+> cp -r deploy ../fenglianshop && cd .. && rm -rf fenglianshop-tmp
 > ```
 >
 > 克隆时遇到 `HTTP2 framing layer` 错误，使用 HTTP/1.1 重试：
@@ -161,6 +161,9 @@ bash start.sh
 | **操作系统** | Linux (Ubuntu 20.04+, CentOS 7+) | Ubuntu 22.04 LTS |
 | **域名** | 3个子域名 | 已配置SSL |
 
+> **小程序上传功能**：系统内置 `mp-upload-worker` 容器用于异步上传小程序代码到微信后台。
+> 该容器仅在管理后台「渠道设置 - 微信小程序 - 上传代码」时使用，平时空闲，占用约 512MB 内存。
+
 ---
 
 ## 默认账号
@@ -192,6 +195,26 @@ bash start.sh
 | `APP_EDITION` | 否 | `single` | 应用版本（单开版=single） |
 | `DEPLOYMENT_MODE` | 否 | `public_dockerhub` | 公开版升级模式 |
 | `AGENT_TOOLKIT_DIR` | 否 | `/host/public-update-toolkit` | 容器内宿主机更新工具挂载点 |
+| `APP_KEY` | 否 | 自动生成 | 应用密钥（CI 私钥加密根密钥，**禁止未迁移密文直接替换**，详见下方说明） |
+| `MP_WORKER_DB_PASSWORD` | 否 | 自动生成 | mp-upload-worker 受限 DB 账号密码（仅授权小程序上传相关 3 张表） |
+
+---
+
+## ⚠️ APP_KEY 运维约束（重要）
+
+`APP_KEY` 是 CI 私钥（小程序代码上传凭证）的加密根密钥，不只是 Laravel session/cookie 配置。
+
+| 约束 | 说明 |
+|------|------|
+| 禁止直接替换 | 未迁移密文数据就替换 APP_KEY 会永久丢失所有已配置的微信小程序 CI 私钥 |
+| 备份需配套 | 备份数据库时必须同步备份当时的 APP_KEY，否则恢复后无法解密 CI 私钥 |
+| 一致性 | API 容器与 mp-upload-worker 容器必须使用相同的 APP_KEY（部署脚本已自动同步） |
+
+如确需轮换 APP_KEY：
+1. 使用旧 APP_KEY 解密所有 CI 私钥（`Crypt::decryptString`）
+2. 切换新 APP_KEY
+3. 用新 APP_KEY 重新加密写回
+4. 或要求各租户在管理后台「渠道设置 - 微信小程序 - CI 上传配置」重新上传 CI 私钥
 
 ---
 
@@ -203,9 +226,24 @@ bash start.sh
 
 ### Q2: 国内服务器拉取镜像很慢或超时怎么办？
 
-`start.sh` 会自动检测国内网络并配置 `docker.1ms.run` 镜像加速器，一般情况下无需手动操作。
+`start.sh` 会自动检测国内网络并配置 `docker.1panel.live` 镜像加速器，一般情况下无需手动操作。
 
-如果加速器不可用，可手动修改 `/etc/docker/daemon.json` 中的镜像源地址，然后重启 Docker 重新部署。
+如果遇到加速器不可用的情况，可手动切换其他镜像源：
+
+**备用镜像源：**
+```bash
+# 切换为 mirror.baijiayun.com
+echo '{"registry-mirrors":["https://mirror.baijiayun.com"]}' > /etc/docker/daemon.json
+systemctl daemon-reload && systemctl restart docker
+bash start.sh
+```
+
+**恢复直连 Docker Hub：**
+```bash
+echo '{}' > /etc/docker/daemon.json
+systemctl daemon-reload && systemctl restart docker
+bash start.sh
+```
 
 ### Q3: 如何更新到新版本？
 
@@ -251,7 +289,7 @@ bash restore.sh backups/backup_20260531_030000.sql
 fenglianshop-open/
 ├── README.md                  ← 部署安装教程（你正在看的）
 ├── LICENSE                    ← AGPLv3 许可证
-└── public-release-files/                    ← 部署工具包
+└── deploy/                    ← 部署工具包
     ├── install.sh             ← 一键下载脚本（推荐使用）
     ├── docker-compose.yml     ← Docker Compose 编排文件
     ├── .env.example           ← 环境变量模板
@@ -294,5 +332,21 @@ fenglianshop-open/
 ## 运维提醒
 
 - 不要把 Docker Socket 挂载到 API 容器；公开版升级由宿主机 `update-toolkit` 守护进程执行。
-- 不要执行 `docker compose down -v`；这会删除数据库卷和 Redis 数据。
+- 不要执行 `docker compose down -v`；这会删除数据库、上传文件、插件文件、Redis 和 Caddy 数据卷。
 - 常规维护优先使用 `docker compose restart`、`docker compose stop`、`docker compose up -d`。
+
+## 数据卷说明
+
+公开版单开部署会创建 7 个 Docker 命名卷：
+
+| 卷名 | 用途 |
+|------|------|
+| `mysql_data` | MySQL 数据库数据 |
+| `redis_data` | Redis 队列和缓存持久化数据 |
+| `api_storage` | Laravel storage、初始化标记、微信验证文件、小程序上传临时协作目录 |
+| `api_uploads` | API 公开上传文件，供 `nginx-api` 静态读取 |
+| `plugin_data` | 插件安装包解压后的前后端运行文件，API 写入、Admin 只读加载 |
+| `caddy_data` | Caddy 运行数据 |
+| `caddy_config` | Caddy 运行配置缓存 |
+
+旧私有单开部署包有 8 个卷，其中 `admin_uploads`、`h5_uploads` 是旧的分端上传目录。新版公开版采用 API 统一上传和 Caddy 统一反代，不再需要单独保留这两个卷；新增并保留 `plugin_data` 是为了保证插件市场安装、更新后的插件文件在容器重建后不丢失。

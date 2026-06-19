@@ -1,0 +1,35 @@
+# ===== 运行时生成的文件 =====
+.env
+Caddyfile
+backups/
+
+# ===== Docker =====
+*.sql
+*.sql.gz
+*.bak
+
+# ===== 开发工具 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 临时文件 =====
+*.log
+*.cache
+*.tmp
+
+# ===== 系统文件 =====
+desktop.ini
+ehthumbs.db
+
+# ===== 含密钥的环境配置（严禁入库，避免泄露 APP_KEY/DB_PASSWORD 等）=====
+.env.api-container
+.env.api-container.*
+
+# ===== 运行时进程文件与队列目录（update-toolkit 本地运行产物）=====
+update-toolkit/.daemon.pid
+update-toolkit/.queue/
