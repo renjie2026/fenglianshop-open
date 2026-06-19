@@ -59,5 +59,5 @@ bash ./update-toolkit/public-update.sh cmd_xxx
 ## 安全提醒
 
 - 不要把 Docker Socket 挂载进 API 容器。
-- 不要执行 `docker compose down -v`，否则会删除 MySQL / Redis 数据卷。
+- 不要执行 `docker compose down -v`，否则会删除 MySQL、Redis、上传文件、插件文件和 Caddy 数据卷。
 - 守护进程只会处理 `api`、`admin`、`h5`、`nginx-api` 四个公开版镜像。

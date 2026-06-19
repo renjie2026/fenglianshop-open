@@ -9,8 +9,10 @@ set -euo pipefail
 #    3. 添加 proxy_set_header X-Forwarded-Proto $scheme (Laravel生成HTTPS URL)
 #
 #  适用场景：宝塔Nginx → Caddy(127.0.0.1:8880) → Docker容器
-#  目标域名：从脚本同目录的 .env 文件中读取
-#    ADMIN_URL / H5_URL / API_URL
+#  目标域名：
+#    - fenglianshop.shangheweibao.ren    (管理后台)
+#    - fenglianshoph5.shangheweibao.ren  (H5会员端)
+#    - fenglianshopapi.shangheweibao.ren (API接口)
 #
 #  用法：
 #    chmod +x fix-bt-proxy-pass.sh
@@ -28,49 +30,11 @@ fi
 BT_PROXY_ROOT="/www/server/panel/vhost/nginx/proxy"
 TARGET_PORT="8880"
 
-# 从脚本同目录的 .env 文件中读取域名
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
-
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "[错误] 未找到 .env 文件：$ENV_FILE" >&2
-  echo "        请在脚本同目录下创建 .env 文件，配置以下项：" >&2
-  echo '        ADMIN_URL=https://admin.yourdomain.com' >&2
-  echo '        H5_URL=https://h5.yourdomain.com' >&2
-  echo '        API_URL=https://api.yourdomain.com' >&2
-  exit 1
-fi
-
-# 从 URL 中提取域名（去除协议前缀）
-extract_domain() {
-  local url="$1"
-  echo "$url" | sed -E 's#^https?://##' | sed -E 's#/.*$##'
-}
-
-ADMIN_DOMAIN=$(grep -E "^ADMIN_URL=" "$ENV_FILE" | tail -1 | cut -d'=' -f2-)
-H5_DOMAIN=$(grep -E "^H5_URL=" "$ENV_FILE" | tail -1 | cut -d'=' -f2-)
-API_DOMAIN=$(grep -E "^API_URL=" "$ENV_FILE" | tail -1 | cut -d'=' -f2-)
-
-ADMIN_DOMAIN=$(extract_domain "$ADMIN_DOMAIN")
-H5_DOMAIN=$(extract_domain "$H5_DOMAIN")
-API_DOMAIN=$(extract_domain "$API_DOMAIN")
-
-DOMAINS=()
-[[ -n "$ADMIN_DOMAIN" ]] && DOMAINS+=("$ADMIN_DOMAIN")
-[[ -n "$H5_DOMAIN" ]] && DOMAINS+=("$H5_DOMAIN")
-[[ -n "$API_DOMAIN" ]] && DOMAINS+=("$API_DOMAIN")
-
-if [[ ${#DOMAINS[@]} -eq 0 ]]; then
-  echo "[错误] .env 文件中未找到有效的域名配置" >&2
-  echo "        请确认 ADMIN_URL / H5_URL / API_URL 已填写" >&2
-  exit 1
-fi
-
-echo "[信息] 从 .env 读取到 ${#DOMAINS[@]} 个域名："
-for d in "${DOMAINS[@]}"; do
-  echo "        $d"
-done
-echo ""
+DOMAINS=(
+  "fenglianshop002.shangheweibao.ren"
+  "fenglianshoph5002.shangheweibao.ren"
+  "fenglianshopapi002.shangheweibao.ren"
+)
 
 if [[ ! -d "$BT_PROXY_ROOT" ]]; then
   echo "[错误] 未发现宝塔 proxy 目录：$BT_PROXY_ROOT" >&2
@@ -187,12 +151,10 @@ echo ""
 echo "============================================"
 echo "[完成] 修复完毕！已自动重载 Nginx。"
 echo "       备份文件：*.bak-$backup_ts"
-echo ""
 echo "恭喜部署成功，欢迎使用蜂链商城电商新零售系统。"
 echo "容器已经全部部署成功，正在初始化中，首次部署成功后请等待1~3分钟后再登录管理后台使用系统。"
-echo ""
 echo "请测试以下地址："
-[[ -n "$ADMIN_DOMAIN" ]] && echo "  管理后台: https://$ADMIN_DOMAIN"
-[[ -n "$H5_DOMAIN" ]]   && echo "  H5会员端: https://$H5_DOMAIN"
-[[ -n "$API_DOMAIN" ]]  && echo "  API接口:  https://$API_DOMAIN"
+echo "  管理后台: https://fenglianshop.shangheweibao.ren"
+echo "  H5会员端: https://fenglianshoph5.shangheweibao.ren"
+echo "  API接口:  https://fenglianshopapi.shangheweibao.ren"
 echo "============================================"

@@ -68,14 +68,18 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      QUEUE_CONNECTION: redis
       CACHE_DRIVER: redis
       SESSION_DRIVER: redis
       UPDATE_MGMT_BASE_URLS: ${UPDATE_MGMT_BASE_URLS:-}
       AGENT_BOOTSTRAP_SECRET: ${AGENT_BOOTSTRAP_SECRET:-update_mgmt_secret_2026}
+      APP_KEY: ${APP_KEY:-}
     volumes:
       - api_storage:/var/www/html/storage
       - api_uploads:/var/www/html/public/uploads
+      - plugin_data:/var/www/html/plugins
       - ./update-toolkit:/host/public-update-toolkit:rw
+
     depends_on:
       mysql:
         condition: service_healthy
@@ -88,6 +92,9 @@ services:
   nginx-api:
     image: fenglianshop/nginx-api:${VERSION:-v6.20260611.003}
     restart: unless-stopped
+    volumes:
+      - api_uploads:/var/www/html/public/uploads:ro
+      - api_storage:/var/www/html/storage:ro
     depends_on:
       - api
     mem_limit: 256M
@@ -97,6 +104,8 @@ services:
   admin:
     image: fenglianshop/admin:${VERSION:-v6.20260611.003}
     restart: unless-stopped
+    volumes:
+      - plugin_data:/usr/share/nginx/html/plugins:ro
     mem_limit: 256M
     networks:
       - app-network
@@ -132,11 +141,59 @@ services:
     networks:
       - app-network
 
+  # ============================================
+  # 小程序上传 Worker（公开版单开）
+  # 🔴 仅挂 app-network，不对外暴露端口
+  # ============================================
+  mp-upload-worker:
+    image: fenglianshop/mp-upload-worker:${VERSION:-latest}
+    container_name: ${COMPOSE_PROJECT_NAME:-xinshangcheng}_mp-upload-worker
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      APP_ENV: production
+      APP_KEY: ${APP_KEY:-}
+      APP_DEBUG: "false"
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_DATABASE: ${DB_DATABASE:-xinshangcheng003}
+      DB_USERNAME: mp_worker
+      DB_PASSWORD: ${MP_WORKER_DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      QUEUE_CONNECTION: mp-upload-redis
+      TENANT_ENABLED: "false"
+      MP_ASYNC_UPLOAD: "true"
+      IS_MP_WORKER: "true"
+    volumes:
+      - api_storage:/var/www/html/storage
+    tmpfs:
+      - /var/www/html/storage/app/mp-upload/tmp:size=64M,mode=0700,uid=33,gid=33
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work.*mp-upload' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    mem_limit: 1024M
+    mem_reservation: 512M
+
 volumes:
   mysql_data:
   redis_data:
   api_storage:
   api_uploads:
+  plugin_data:
+
   caddy_data:
   caddy_config:
 

@@ -122,6 +122,134 @@ print_public_update_daemon_hint() {
     echo ""
 }
 
+# ============================================
+# 创建 mp-upload-worker 受限 DB 账号
+# 必须在 api migrate 完成后调用（否则 GRANT 目标表不存在）
+# 复用 .env 的 MYSQL_ROOT_PASSWORD 执行 GRANT，密码写入 .env 的 MP_WORKER_DB_PASSWORD
+# ============================================
+ensure_mp_worker_db_account() {
+    local db_name
+    db_name=$(get_env "DB_DATABASE")
+    db_name="${db_name:-xinshangcheng003}"
+
+    local root_pass
+    root_pass=$(get_env "MYSQL_ROOT_PASSWORD")
+    if [[ -z "$root_pass" || "$root_pass" == "CHANGE_ME_ON_FIRST_RUN" ]]; then
+        warn "MYSQL_ROOT_PASSWORD 未就绪，跳过 mp_worker 账号创建"
+        return 0
+    fi
+
+    # 定位 MySQL 容器（支持多种命名格式）
+    local mysql_container=""
+    for name in "${COMPOSE_PROJECT:-fenglianshop}_mysql_1" "${COMPOSE_PROJECT:-fenglianshop}-mysql-1" "${COMPOSE_PROJECT:-fenglianshop}_mysql"; do
+        if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+            mysql_container="$name"
+            break
+        fi
+    done
+    if [[ -z "$mysql_container" ]]; then
+        warn "MySQL 容器未找到，跳过 mp_worker 账号创建"
+        return 0
+    fi
+
+    # 密码优先读 .env，不存在则随机生成并回写（仅首次）
+    local worker_pass
+    worker_pass=$(get_env "MP_WORKER_DB_PASSWORD")
+    if [[ -z "$worker_pass" ]]; then
+        # 仅 [A-Za-z0-9]，杜绝特殊字符导致 SQL 注入
+        worker_pass=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 24)
+        set_env_val "MP_WORKER_DB_PASSWORD" "$worker_pass"
+        info "已生成 mp_worker 密码并写入 .env"
+    fi
+
+    info "创建/更新受限 DB 账号 mp_worker（仅授权小程序上传相关表）..."
+
+    # 🔴 关键：不能用 heredoc + 管道 + grep 的组合
+    # 在 set -euo pipefail 下，grep 找不到匹配会返回1，pipefail 让整个管道返回1，
+    # set -e 会立即终止脚本（这正是上次部署卡在这里的直接原因）
+    #
+    # 正确做法：先用 -e 执行 SQL（不用管道，退出码非0不致命），再用单独命令验证账号
+
+    # 步骤1：执行 CREATE USER + GRANT（set +e 临时关闭，避免任何错误终止脚本）
+    set +e
+    docker exec "$mysql_container" mysql -uroot -p"$root_pass" --default-character-set=utf8mb4 -e "
+CREATE USER IF NOT EXISTS 'mp_worker'@'%' IDENTIFIED BY '${worker_pass}';
+ALTER USER 'mp_worker'@'%' IDENTIFIED BY '${worker_pass}';
+GRANT SELECT, INSERT, UPDATE ON ${db_name}.miniprogram_ci_keys TO 'mp_worker'@'%';
+GRANT SELECT, INSERT, UPDATE ON ${db_name}.miniprogram_upload_history TO 'mp_worker'@'%';
+GRANT SELECT, INSERT ON ${db_name}.app_notification_logs TO 'mp_worker'@'%';
+FLUSH PRIVILEGES;
+" 2>&1 | grep -v "Using a password" || true
+    set -e
+
+    # 步骤2：验证 mp_worker 账号能否实际登录（最可靠的成败判断）
+    set +e
+    docker exec "$mysql_container" mysql -ump_worker -p"$worker_pass" -e "SELECT 1 AS login_test;" 2>/dev/null
+    local login_test=$?
+    set -e
+
+    if [ $login_test -eq 0 ]; then
+        ok "mp_worker 账号创建成功，且可正常登录（仅授权 3 张小程序相关表）"
+    else
+        warn "mp_worker 账号创建/登录失败（退出码=${login_test}）"
+        warn "可能原因：①migrate 未完成（3张表不存在）②root 密码错误 ③密码含特殊字符"
+        warn "排查命令："
+        warn "  docker exec $mysql_container mysql -uroot -p'***' -e 'SHOW TABLES LIKE \"miniprogram_%\";'"
+        warn "  docker exec $mysql_container mysql -uroot -p'***' -e 'SELECT user FROM mysql.user WHERE user=\"mp_worker\";'"
+        warn "（此警告不阻塞部署，mp-upload-worker 会在任务执行时报错）"
+    fi
+}
+
+# ============================================
+# 从 api 容器同步 APP_KEY 到 .env
+# APP_KEY 是 CI 私钥加密根密钥，API/Worker 必须一致
+# ============================================
+sync_app_key_from_container() {
+    local current_app_key
+    current_app_key=$(get_env "APP_KEY")
+    if [[ -n "$current_app_key" ]]; then
+        return 0
+    fi
+
+    info "从 api 容器同步 APP_KEY 到 .env ..."
+    local api_container=""
+    for name in "${COMPOSE_PROJECT:-fenglianshop}_api_1" "${COMPOSE_PROJECT:-fenglianshop}-api-1" "${COMPOSE_PROJECT:-fenglianshop}_api"; do
+        if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
+            api_container="$name"
+            break
+        fi
+    done
+
+    if [[ -z "$api_container" ]]; then
+        warn "api 容器未运行，无法同步 APP_KEY（mp-upload-worker 启动时若 APP_KEY 为空会失败）"
+        return 0
+    fi
+
+    # 等 api 容器完成 key:generate（最多60秒）
+    local try=0
+    local container_key=""
+    while [[ $try -lt 30 ]]; do
+        container_key=$(docker exec "$api_container" sh -c "grep '^APP_KEY=' /var/www/html/.env 2>/dev/null | cut -d'=' -f2-" 2>/dev/null || true)
+        if [[ -n "$container_key" && "$container_key" != "base64:"* ]]; then
+            # 等待有效 key
+            :
+        fi
+        if [[ -n "$container_key" ]]; then
+            break
+        fi
+        sleep 2
+        try=$((try + 1))
+    done
+
+    if [[ -n "$container_key" ]]; then
+        set_env_val "APP_KEY" "$container_key"
+        ok "APP_KEY 已同步到 .env（mp-upload-worker 将使用此 key 解密 CI 私钥）"
+    else
+        warn "未能从 api 容器获取 APP_KEY，mp-upload-worker 可能无法解密 CI 私钥"
+        warn "请稍后手动执行: docker exec <api容器> grep ^APP_KEY /var/www/html/.env 并写入 .env"
+    fi
+}
+
 maybe_install_public_update_daemon() {
     local install_script="./update-toolkit/install-public-update-daemon.sh"
     local confirm_install
@@ -316,7 +444,7 @@ if [ -z "$CADDY_IMAGE_VAL" ] || [ "$CADDY_IMAGE_VAL" = "" ]; then
         info "检测到国内网络，配置 Docker 镜像加速器..."
         DOCKER_MIRROR="https://docker.1ms.run"
         if [ -f /etc/docker/daemon.json ]; then
-            if ! grep -q "docker.1panel.live" /etc/docker/daemon.json; then
+            if ! grep -q "docker.1ms.run" /etc/docker/daemon.json; then
                 info "写入 Docker 镜像加速器到 /etc/docker/daemon.json..."
                 echo "{\"registry-mirrors\":[\"${DOCKER_MIRROR}\"]}" > /etc/docker/daemon.json
                 systemctl daemon-reload && systemctl restart docker
@@ -362,8 +490,45 @@ CADDY_EOF
 ok "Caddyfile 已生成。"
 
 # ----- 10+11. 拉取镜像并启动容器 -----
-info "拉取镜像并启动容器（已有镜像自动跳过）..."
-$COMPOSE_CMD up -d --pull missing
+info "拉取镜像（已有镜像自动跳过，失败自动重试）..."
+
+# 公开版首次部署：CI/CD 推送镜像到 Docker Hub 后，CDN 全球同步需要几分钟
+# 首次拉取可能撞上同步窗口（报 not found），故失败后等待重试
+pull_images_with_retry() {
+    local max_retries=3
+    local retry_delay=30
+    local attempt=1
+    while [ $attempt -le $max_retries ]; do
+        info "拉取镜像（第 ${attempt}/${max_retries} 次尝试）..."
+        # 🔴 关键：不能用 | tail 或 | grep 管道（会把进度输出全部缓冲到命令结束才显示，
+        # 表现为光标闪烁长时间无输出）。直接让 compose pull 输出到终端，实时显示进度。
+        # 退出码用 $?: set +e 保护避免失败终止脚本，失败后进入重试逻辑。
+        set +e
+        $COMPOSE_CMD pull
+        local pull_exit=$?
+        set -e
+        if [ $pull_exit -eq 0 ]; then
+            ok "镜像拉取完成"
+            return 0
+        fi
+        if [ $attempt -lt $max_retries ]; then
+            warn "拉取失败（exit=${pull_exit}），${retry_delay}秒后重试..."
+            warn "（常见原因：刚推送的镜像在 Docker Hub CDN 同步中，稍等即可）"
+            sleep $retry_delay
+        fi
+        attempt=$((attempt + 1))
+    done
+    error "镜像拉取失败（已重试 ${max_retries} 次）"
+    error "请稍后重试 bash start.sh，或检查网络/Docker Hub 状态"
+    return 1
+}
+
+if ! pull_images_with_retry; then
+    exit 1
+fi
+
+info "启动容器..."
+$COMPOSE_CMD up -d
 
 # ----- 12. 等待健康检查 -----
 info "等待 MySQL 和 Redis 就绪..."
@@ -387,6 +552,41 @@ if [ $ELAPSED -ge $WAIT_TIMEOUT ]; then
     warn "等待超时，请检查容器状态: $COMPOSE_CMD ps"
     warn "查看日志: $COMPOSE_CMD logs mysql redis"
 fi
+
+# ----- 12.5 确保 storage 目录结构 -----
+info "确保 API storage 目录结构..."
+$COMPOSE_CMD exec -T api sh -c "mkdir -p /var/www/html/storage/framework/sessions /var/www/html/storage/framework/cache /var/www/html/storage/framework/views /var/www/html/storage/logs /var/www/html/bootstrap/cache && chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache" 2>/dev/null || warn "storage 目录初始化跳过（API容器可能未就绪）"
+
+# ----- 12.6 等待 api 容器完成 migrate + 同步 APP_KEY + 创建 mp_worker 受限账号 -----
+info "等待 API 容器完成数据库迁移（SAFE_DB_INIT）..."
+API_WAIT=0
+API_WAIT_MAX=180
+API_READY=false
+while [ $API_WAIT -lt $API_WAIT_MAX ]; do
+    if $COMPOSE_CMD exec -T api sh -c "php artisan tinker --execute=\"echo Schema::hasTable('mall_admins')?1:0;\"" 2>/dev/null | grep -q "1"; then
+        ok "API 容器 migrate 已完成"
+        API_READY=true
+        break
+    fi
+    sleep 3
+    API_WAIT=$((API_WAIT + 3))
+    echo -ne "\r  等待 API migrate... ${API_WAIT}s / ${API_WAIT_MAX}s"
+done
+echo ""
+
+if [ "$API_READY" != "true" ]; then
+    warn "API migrate 等待超时（${API_WAIT_MAX}s），继续尝试..."
+fi
+
+# 同步 APP_KEY（CI 私钥解密根密钥，API/Worker 必须一致）
+sync_app_key_from_container
+
+# 创建 mp-upload-worker 受限 DB 账号（api migrate 完成后调用，确保目标表已存在）
+ensure_mp_worker_db_account
+
+# ----- 12.7 重启 mp-upload-worker 使其读取最新的 APP_KEY 和 mp_worker 密码 -----
+info "确保 mp-upload-worker 读取最新配置..."
+$COMPOSE_CMD up -d mp-upload-worker 2>/dev/null || warn "mp-upload-worker 启动跳过（docker-compose.yml 可能未含此服务）"
 
 # ----- 13. 安装备份 cron -----
 BACKUP_DAYS=$(get_env BACKUP_RETENTION_DAYS)
@@ -414,6 +614,8 @@ echo ""
 echo "============================================================"
 echo -e "  ${GREEN}蜂链商城部署完成！${NC}"
 echo "============================================================"
+echo -e "  ${YELLOW}恭喜部署成功，欢迎使用蜂链商城电商新零售系统。${NC}"
+echo -e "  ${YELLOW}容器已经全部部署成功，正在初始化中，首次部署成功后请等待1~3分钟后再登录管理后台使用系统。${NC}"
 echo ""
 echo "  管理后台:   ${ADMIN_URL}"
 echo "  H5会员端:   ${H5_URL}"

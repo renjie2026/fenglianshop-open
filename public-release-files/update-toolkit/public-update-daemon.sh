@@ -46,6 +46,9 @@ ensure_runtime_files() {
     if [ ! -f "${TRIGGER_FILE}" ]; then
         : > "${TRIGGER_FILE}"
     fi
+
+    chmod 666 "${TRIGGER_FILE}" 2>/dev/null || true
+    chmod 666 "${COMMANDS_FILE}" 2>/dev/null || true
 }
 
 cleanup() {
